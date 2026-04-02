@@ -6,6 +6,7 @@ import {
   CallbackProperty,
   Cartesian2,
   Cartesian3,
+  CesiumTerrainProvider,
   Cartographic,
   Cesium3DTileset,
   Color,
@@ -78,6 +79,7 @@ const ionState = {
 };
 
 const ION_TOKEN_STORAGE_KEY = "geoworkbench_ion_token";
+const ION_API_ROOT = "https://api.cesium.com/v1";
 
 function setStatus(message, isError = false) {
   ui.statusText.textContent = message;
@@ -375,7 +377,7 @@ async function fetchIonAssets() {
     throw new Error("Token Cesium ion mancante.");
   }
 
-  const meResponse = await fetch("https://api.cesium.com/v1/me", {
+  const meResponse = await fetch(`${ION_API_ROOT}/me`, {
     headers: {
       Authorization: `Bearer ${ionState.token}`,
     },
@@ -394,7 +396,7 @@ async function fetchIonAssets() {
     throw new Error(message);
   }
 
-  const response = await fetch("https://api.cesium.com/v1/assets", {
+  const response = await fetch(`${ION_API_ROOT}/assets`, {
     headers: {
       Authorization: `Bearer ${ionState.token}`,
     },
@@ -423,44 +425,78 @@ async function fetchIonAssets() {
   refreshIonAssetSelect();
 }
 
-async function loadIonAssetById(assetId) {
-  const listedAsset = ionState.assets.find((item) => item.id === assetId);
-  let assetMeta = listedAsset;
+function withTokenQuery(url, token) {
+  const parsed = new URL(url);
+  if (!parsed.searchParams.has("access_token")) {
+    parsed.searchParams.set("access_token", token);
+  }
+  return parsed.toString();
+}
 
-  if (!assetMeta) {
-    const response = await fetch(`https://api.cesium.com/v1/assets/${assetId}`, {
-      headers: {
-        Authorization: `Bearer ${ionState.token}`,
-      },
-    });
+async function getIonAssetEndpoint(assetId) {
+  const endpointUrl = `${ION_API_ROOT}/assets/${assetId}/endpoint?access_token=${encodeURIComponent(
+    ionState.token,
+  )}`;
+  const response = await fetch(endpointUrl);
 
-    if (!response.ok) {
-      throw new Error(`Asset #${assetId} non accessibile (${response.status}).`);
+  if (!response.ok) {
+    let message = `Asset #${assetId} non accessibile (${response.status}).`;
+    try {
+      const errorPayload = await response.json();
+      if (errorPayload?.message) {
+        message = `${message} ${errorPayload.message}`;
+      }
+    } catch {
+      // Ignore JSON parsing failures and keep fallback message.
     }
-
-    assetMeta = await response.json();
+    throw new Error(message);
   }
 
-  const resource = await IonResource.fromAssetId(assetId);
-  const type = (assetMeta.type || "").toUpperCase();
+  return response.json();
+}
 
-  if (type === "3DTILES" || type === "TERRAIN") {
-    const tileset = await Cesium3DTileset.fromUrl(resource);
+async function loadIonAssetById(assetId) {
+  const endpoint = await getIonAssetEndpoint(assetId);
+  const endpointAccessToken = endpoint.accessToken || ionState.token;
+  const endpointType = (endpoint.type || "").toUpperCase();
+  const endpointUrl = withTokenQuery(endpoint.url, endpointAccessToken);
+
+  let ionResource;
+  try {
+    ionResource = await IonResource.fromAssetId(assetId, {
+      accessToken: ionState.token,
+    });
+  } catch {
+    ionResource = undefined;
+  }
+
+  if (endpointType === "3DTILES") {
+    const tileset = await Cesium3DTileset.fromUrl(ionResource || endpointUrl);
     viewer.scene.primitives.add(tileset);
     loadedTilesets.push(tileset);
     await viewer.zoomTo(tileset);
     return;
   }
 
-  if (type === "CZML") {
-    const dataSource = await viewer.dataSources.add(CzmlDataSource.load(resource));
+  if (endpointType === "TERRAIN") {
+    viewer.terrainProvider = await CesiumTerrainProvider.fromUrl(
+      ionResource || endpointUrl,
+    );
+    setStatus(`Terrain ion #${assetId} attivo.`);
+    return;
+  }
+
+  if (endpointType === "CZML") {
+    const dataSource = await viewer.dataSources.add(
+      CzmlDataSource.load(ionResource || endpointUrl),
+    );
     await viewer.flyTo(dataSource);
     return;
   }
 
-  if (type === "KML") {
+  if (endpointType === "KML") {
     const dataSource = await viewer.dataSources.add(
-      KmlDataSource.load(resource, {
+      KmlDataSource.load(ionResource || endpointUrl, {
         camera: viewer.scene.camera,
         canvas: viewer.scene.canvas,
         screenOverlayContainer: viewer.container,
@@ -470,13 +506,17 @@ async function loadIonAssetById(assetId) {
     return;
   }
 
-  if (type === "GEOJSON") {
-    const dataSource = await viewer.dataSources.add(GeoJsonDataSource.load(resource));
+  if (endpointType === "GEOJSON") {
+    const dataSource = await viewer.dataSources.add(
+      GeoJsonDataSource.load(ionResource || endpointUrl),
+    );
     await viewer.flyTo(dataSource);
     return;
   }
 
-  throw new Error(`Tipo asset non ancora supportato: ${type || "UNKNOWN"}`);
+  throw new Error(
+    `Tipo asset non ancora supportato: ${endpointType || "UNKNOWN"}.`,
+  );
 }
 
 handler.setInputAction((click) => {
@@ -601,7 +641,10 @@ ui.connectIonButton.addEventListener("click", async () => {
         true,
       );
     } else {
-      setStatus(`Errore connessione Cesium ion: ${error.message}`, true);
+      setStatus(
+        `Errore connessione Cesium ion: ${error.message} Verifica anche Allowed URLs del token.`,
+        true,
+      );
     }
   }
 });
