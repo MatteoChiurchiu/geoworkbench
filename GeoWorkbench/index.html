@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no"
+    />
+    <title>Geo Workbench</title>
+    <link rel="stylesheet" href="GeoWorkbench.css" media="screen" />
+  </head>
+  <body>
+    <div id="cesiumContainer" class="fullWindow"></div>
+
+    <aside class="panel" aria-label="Strumenti mappa">
+      <h1>Geo Workbench</h1>
+
+      <section class="toolSection">
+        <h2>Misure</h2>
+        <div class="buttonRow">
+          <button id="distanceButton" type="button">Distanza</button>
+          <button id="areaButton" type="button">Area</button>
+        </div>
+        <div class="buttonRow">
+          <button id="finishButton" type="button">Chiudi misura</button>
+          <button id="clearButton" type="button">Pulisci</button>
+        </div>
+        <p class="hint">Click sinistro per aggiungere punti, click destro per chiudere.</p>
+      </section>
+
+      <section class="toolSection">
+        <h2>Caricamento dati</h2>
+        <label class="fieldLabel" for="sourceUrl">URL sorgente</label>
+        <input id="sourceUrl" type="text" placeholder="https://.../dataset.geojson" />
+
+        <label class="fieldLabel" for="sourceType">Tipo</label>
+        <select id="sourceType">
+          <option value="auto">Rilevamento automatico</option>
+          <option value="czml">CZML</option>
+          <option value="geojson">GeoJSON</option>
+          <option value="kml">KML/KMZ</option>
+          <option value="gpx">GPX</option>
+          <option value="3dtiles">3D Tiles (tileset.json)</option>
+        </select>
+
+        <button id="loadUrlButton" type="button">Carica da URL</button>
+
+        <label class="fieldLabel" for="localFiles">File locale</label>
+        <input id="localFiles" type="file" multiple />
+        <button id="loadFilesButton" type="button">Carica file</button>
+      </section>
+
+      <section class="toolSection">
+        <h2>Cesium ion</h2>
+        <label class="fieldLabel" for="ionToken">Access token</label>
+        <input
+          id="ionToken"
+          type="text"
+          placeholder="Inserisci il tuo token Cesium ion"
+          autocomplete="off"
+        />
+        <div class="buttonRow ionButtons">
+          <button id="connectIonButton" type="button">Connetti</button>
+          <button id="refreshIonButton" type="button">Aggiorna lista</button>
+        </div>
+
+        <label class="fieldLabel" for="ionAssets">Asset disponibili</label>
+        <select id="ionAssets" size="7"></select>
+        <button id="loadIonAssetButton" type="button">Carica asset selezionato</button>
+
+        <label class="fieldLabel" for="ionAssetId">Asset ID manuale</label>
+        <input id="ionAssetId" type="text" placeholder="Es. 123456" inputmode="numeric" />
+        <button id="loadIonAssetIdButton" type="button">Carica da Asset ID</button>
+      </section>
+
+      <section class="toolSection">
+        <h2>Stato</h2>
+        <p id="statusText" class="status">Pronto.</p>
+      </section>
+    </aside>
+
+    <script src="GeoWorkbench.js" type="module"></script>
+  </body>
+</html>
