@@ -10,6 +10,7 @@ import {
   Cartographic,
   Cesium3DTileset,
   Color,
+  createGooglePhotorealistic3DTileset,
   CzmlDataSource,
   defined,
   EllipsoidGeodesic,
@@ -59,6 +60,7 @@ const ui = {
   loadIonAssetButton: document.getElementById("loadIonAssetButton"),
   ionAssetId: document.getElementById("ionAssetId"),
   loadIonAssetIdButton: document.getElementById("loadIonAssetIdButton"),
+  loadGoogleTilesButton: document.getElementById("loadGoogleTilesButton"),
   statusText: document.getElementById("statusText"),
 };
 
@@ -80,6 +82,7 @@ const ionState = {
 
 const ION_TOKEN_STORAGE_KEY = "geoworkbench_ion_token";
 const ION_API_ROOT = "https://api.cesium.com/v1";
+const GOOGLE_3D_TILES_ION_ASSET_ID = 2275207;
 
 function setStatus(message, isError = false) {
   ui.statusText.textContent = message;
@@ -519,6 +522,24 @@ async function loadIonAssetById(assetId) {
   );
 }
 
+async function loadGooglePhotorealisticTiles() {
+  if (!ionState.token) {
+    throw new Error("Inserisci prima un token Cesium ion valido.");
+  }
+
+  try {
+    const googleTiles = await createGooglePhotorealistic3DTileset();
+    viewer.scene.primitives.add(googleTiles);
+    loadedTilesets.push(googleTiles);
+    await viewer.zoomTo(googleTiles);
+    return;
+  } catch {
+    // Fallback for environments where helper API is unavailable.
+  }
+
+  await loadIonAssetById(GOOGLE_3D_TILES_ION_ASSET_ID);
+}
+
 handler.setInputAction((click) => {
   if (!measurement.mode) {
     return;
@@ -690,6 +711,19 @@ ui.loadIonAssetIdButton.addEventListener("click", async () => {
     setStatus(`Asset ion #${assetId} caricato.`);
   } catch (error) {
     setStatus(`Errore caricamento asset ion: ${error.message}`, true);
+  }
+});
+
+ui.loadGoogleTilesButton.addEventListener("click", async () => {
+  try {
+    setStatus("Caricamento Google 3D Tiles in corso...");
+    await loadGooglePhotorealisticTiles();
+    setStatus("Google 3D Tiles caricato.");
+  } catch (error) {
+    setStatus(
+      `Errore Google 3D Tiles: ${error.message} Controlla permessi token e Allowed URLs.`,
+      true,
+    );
   }
 });
 
