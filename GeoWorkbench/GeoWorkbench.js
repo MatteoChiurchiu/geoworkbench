@@ -1,6 +1,6 @@
 window.CESIUM_BASE_URL = window.CESIUM_BASE_URL
   ? window.CESIUM_BASE_URL
-  : "../Build/CesiumDev/";
+  : "https://cdn.jsdelivr.net/npm/cesium@1.139.0/Build/Cesium/";
 
 import {
   CallbackProperty,
@@ -27,7 +27,7 @@ import {
   Transforms,
   Viewer,
   viewerDragDropMixin,
-} from "../Build/CesiumDev/index.js";
+} from "https://cdn.jsdelivr.net/npm/cesium@1.139.0/+esm";
 
 const viewer = new Viewer("cesiumContainer", {
   requestRenderMode: true,
