@@ -30,6 +30,26 @@
       </section>
 
       <section class="toolSection">
+        <h2>Terreno</h2>
+        <label class="fieldLabel" for="terrainMode">Modello terreno</label>
+        <select id="terrainMode">
+          <option value="ellipsoid">WGS84 Ellissoide (senza DEM)</option>
+          <option value="world">Cesium World Terrain</option>
+          <option value="google">Google Photorealistic 3D Tiles (mesh)</option>
+          <option value="ionTerrain">Terrain da Asset ion (ID)</option>
+          <option value="terrainUrl">Terrain da URL (TINItaly/NASA/altri)</option>
+        </select>
+
+        <label class="fieldLabel" for="terrainValue">Valore (opzionale)</label>
+        <input
+          id="terrainValue"
+          type="text"
+          placeholder="Asset ID ion o URL del servizio terrain"
+        />
+        <button id="applyTerrainButton" type="button">Applica terreno</button>
+      </section>
+
+      <section class="toolSection">
         <h2>Caricamento dati</h2>
         <label class="fieldLabel" for="sourceUrl">URL sorgente</label>
         <input id="sourceUrl" type="text" placeholder="https://.../dataset.geojson" />
@@ -42,12 +62,14 @@
           <option value="kml">KML/KMZ</option>
           <option value="gpx">GPX</option>
           <option value="3dtiles">3D Tiles (tileset.json)</option>
+          <option value="obj">OBJ (file locale)</option>
         </select>
 
         <button id="loadUrlButton" type="button">Carica da URL</button>
 
         <label class="fieldLabel" for="localFiles">File locale</label>
         <input id="localFiles" type="file" multiple />
+        <p class="hint">Per OBJ seleziona anche eventuale MTL e texture nello stesso upload.</p>
         <button id="loadFilesButton" type="button">Carica file</button>
       </section>
 

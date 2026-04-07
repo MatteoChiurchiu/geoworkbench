@@ -13,6 +13,7 @@ import {
   createGooglePhotorealistic3DTileset,
   CzmlDataSource,
   defined,
+  EllipsoidTerrainProvider,
   EllipsoidGeodesic,
   GeoJsonDataSource,
   GpxDataSource,
@@ -22,6 +23,7 @@ import {
   LabelStyle,
   Math as CesiumMath,
   Matrix4,
+  Model,
   PolygonHierarchy,
   ScreenSpaceEventHandler,
   ScreenSpaceEventType,
@@ -48,6 +50,9 @@ const ui = {
   areaButton: document.getElementById("areaButton"),
   finishButton: document.getElementById("finishButton"),
   clearButton: document.getElementById("clearButton"),
+  terrainMode: document.getElementById("terrainMode"),
+  terrainValue: document.getElementById("terrainValue"),
+  applyTerrainButton: document.getElementById("applyTerrainButton"),
   sourceUrl: document.getElementById("sourceUrl"),
   sourceType: document.getElementById("sourceType"),
   loadUrlButton: document.getElementById("loadUrlButton"),
@@ -74,6 +79,8 @@ const measurement = {
 };
 
 const loadedTilesets = [];
+const loadedModels = [];
+let googleTerrainTileset = null;
 const handler = new ScreenSpaceEventHandler(viewer.canvas);
 const ionState = {
   token: "",
@@ -83,6 +90,7 @@ const ionState = {
 const ION_TOKEN_STORAGE_KEY = "geoworkbench_ion_token";
 const ION_API_ROOT = "https://api.cesium.com/v1";
 const GOOGLE_3D_TILES_ION_ASSET_ID = 2275207;
+let objLoadersPromise;
 
 function setStatus(message, isError = false) {
   ui.statusText.textContent = message;
@@ -113,6 +121,9 @@ function inferSourceType(source, selectedType) {
   }
   if (normalized.endsWith("tileset.json")) {
     return "3dtiles";
+  }
+  if (normalized.endsWith(".obj")) {
+    return "obj";
   }
 
   return "";
@@ -316,6 +327,12 @@ async function loadDataSource(source, selectedType, nameForStatus) {
     throw new Error("Formato non riconosciuto. Seleziona il tipo manualmente.");
   }
 
+  if (sourceType === "obj") {
+    throw new Error(
+      "OBJ via URL non supportato in modo affidabile. Usa il caricamento file locale.",
+    );
+  }
+
   if (sourceType === "3dtiles") {
     const tileset = await Cesium3DTileset.fromUrl(source);
     viewer.scene.primitives.add(tileset);
@@ -345,6 +362,109 @@ async function loadDataSource(source, selectedType, nameForStatus) {
   if (nameForStatus) {
     setStatus(`Caricato: ${nameForStatus}`);
   }
+}
+
+async function getObjLoaders() {
+  if (!objLoadersPromise) {
+    objLoadersPromise = (async () => {
+      const THREE = await import(
+        "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js"
+      );
+      const { OBJLoader } = await import(
+        "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/loaders/OBJLoader.js"
+      );
+      const { MTLLoader } = await import(
+        "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/loaders/MTLLoader.js"
+      );
+      const { GLTFExporter } = await import(
+        "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/exporters/GLTFExporter.js"
+      );
+
+      return { THREE, OBJLoader, MTLLoader, GLTFExporter };
+    })();
+  }
+
+  return objLoadersPromise;
+}
+
+function getPlacementMatrixAtScreenCenter() {
+  const scene = viewer.scene;
+  const center = new Cartesian2(
+    scene.canvas.clientWidth * 0.5,
+    scene.canvas.clientHeight * 0.5,
+  );
+  const ray = viewer.camera.getPickRay(center);
+
+  let worldPosition;
+  if (defined(ray)) {
+    worldPosition = scene.globe.pick(ray, scene);
+  }
+
+  if (!defined(worldPosition)) {
+    worldPosition = Cartesian3.clone(viewer.camera.positionWC);
+  }
+
+  return Transforms.eastNorthUpToFixedFrame(worldPosition);
+}
+
+async function loadObjModelFromFiles(objFile, allFiles) {
+  const { THREE, OBJLoader, MTLLoader, GLTFExporter } = await getObjLoaders();
+  const fileMap = new Map(allFiles.map((file) => [file.name.toLowerCase(), file]));
+  const objText = await objFile.text();
+
+  let materialCreator;
+  const mtllibMatch = objText.match(/^mtllib\s+(.+)$/im);
+  if (mtllibMatch) {
+    const mtlName = mtllibMatch[1].trim().toLowerCase();
+    const mtlFile = fileMap.get(mtlName);
+    if (mtlFile) {
+      const mtlText = await mtlFile.text();
+      const mtlLoader = new MTLLoader();
+      materialCreator = mtlLoader.parse(mtlText, "");
+      materialCreator.preload();
+    }
+  }
+
+  const objLoader = new OBJLoader();
+  if (materialCreator) {
+    objLoader.setMaterials(materialCreator);
+  }
+
+  const group = objLoader.parse(objText);
+  group.traverse((node) => {
+    if (node.isMesh && !node.material) {
+      node.material = new THREE.MeshStandardMaterial({ color: 0xbdbdbd });
+    }
+  });
+
+  const exporter = new GLTFExporter();
+  const glbData = await new Promise((resolve, reject) => {
+    exporter.parse(
+      group,
+      (result) => {
+        if (result instanceof ArrayBuffer) {
+          resolve(new Uint8Array(result));
+          return;
+        }
+        reject(new Error("Conversione OBJ fallita: output glTF non binario."));
+      },
+      (error) => reject(error),
+      {
+        binary: true,
+        onlyVisible: true,
+      },
+    );
+  });
+
+  const model = await Model.fromGltfAsync({
+    gltf: glbData,
+    modelMatrix: getPlacementMatrixAtScreenCenter(),
+    scale: 1.0,
+  });
+
+  viewer.scene.primitives.add(model);
+  loadedModels.push(model);
+  await viewer.zoomTo(model);
 }
 
 function getAssetDescription(asset) {
@@ -540,6 +660,142 @@ async function loadGooglePhotorealisticTiles() {
   await loadIonAssetById(GOOGLE_3D_TILES_ION_ASSET_ID);
 }
 
+function removeGoogleTerrainTileset() {
+  if (!googleTerrainTileset) {
+    return;
+  }
+
+  viewer.scene.primitives.remove(googleTerrainTileset);
+  const index = loadedTilesets.indexOf(googleTerrainTileset);
+  if (index >= 0) {
+    loadedTilesets.splice(index, 1);
+  }
+  googleTerrainTileset.destroy();
+  googleTerrainTileset = null;
+}
+
+async function ensureGoogleTerrainTileset() {
+  if (googleTerrainTileset) {
+    return googleTerrainTileset;
+  }
+
+  try {
+    googleTerrainTileset = await createGooglePhotorealistic3DTileset();
+  } catch {
+    const endpoint = await getIonAssetEndpoint(GOOGLE_3D_TILES_ION_ASSET_ID);
+    const endpointAccessToken = endpoint.accessToken || ionState.token;
+    const endpointUrl = withTokenQuery(endpoint.url, endpointAccessToken);
+
+    let ionResource;
+    try {
+      ionResource = await IonResource.fromAssetId(GOOGLE_3D_TILES_ION_ASSET_ID, {
+        accessToken: ionState.token,
+      });
+    } catch {
+      ionResource = undefined;
+    }
+
+    googleTerrainTileset = await Cesium3DTileset.fromUrl(ionResource || endpointUrl);
+  }
+
+  viewer.scene.primitives.add(googleTerrainTileset);
+  loadedTilesets.push(googleTerrainTileset);
+  return googleTerrainTileset;
+}
+
+async function applyTerrainModel() {
+  const mode = ui.terrainMode.value;
+  const value = ui.terrainValue.value.trim();
+
+  if (mode !== "google") {
+    removeGoogleTerrainTileset();
+  }
+
+  if (mode === "ellipsoid") {
+    viewer.terrainProvider = new EllipsoidTerrainProvider();
+    setStatus("Terreno attivo: WGS84 ellissoide.");
+    return;
+  }
+
+  if (mode === "world") {
+    viewer.scene.setTerrain(
+      Terrain.fromWorldTerrain({
+        requestWaterMask: true,
+        requestVertexNormals: true,
+      }),
+    );
+    setStatus("Terreno attivo: Cesium World Terrain.");
+    return;
+  }
+
+  if (mode === "google") {
+    if (!ionState.token) {
+      throw new Error("Inserisci prima un token Cesium ion valido.");
+    }
+
+    viewer.terrainProvider = new EllipsoidTerrainProvider();
+    const tileset = await ensureGoogleTerrainTileset();
+    await viewer.zoomTo(tileset);
+    setStatus("Terreno attivo: Google Photorealistic 3D Tiles (mesh).");
+    return;
+  }
+
+  if (mode === "ionTerrain") {
+    const assetId = Number.parseInt(value, 10);
+    if (!Number.isFinite(assetId)) {
+      throw new Error("Inserisci un Asset ID ion numerico per il terreno.");
+    }
+
+    const endpoint = await getIonAssetEndpoint(assetId);
+    const endpointType = (endpoint.type || "").toUpperCase();
+    if (endpointType !== "TERRAIN") {
+      throw new Error(`Asset #${assetId} non e di tipo TERRAIN.`);
+    }
+
+    const endpointAccessToken = endpoint.accessToken || ionState.token;
+    const endpointUrl = withTokenQuery(endpoint.url, endpointAccessToken);
+
+    let ionResource;
+    try {
+      ionResource = await IonResource.fromAssetId(assetId, {
+        accessToken: ionState.token,
+      });
+    } catch {
+      ionResource = undefined;
+    }
+
+    viewer.terrainProvider = await CesiumTerrainProvider.fromUrl(
+      ionResource || endpointUrl,
+    );
+    setStatus(`Terreno attivo: Asset ion #${assetId}.`);
+    return;
+  }
+
+  if (mode === "terrainUrl") {
+    if (!value) {
+      throw new Error("Inserisci un URL di servizio terrain valido.");
+    }
+
+    viewer.terrainProvider = await CesiumTerrainProvider.fromUrl(value);
+    setStatus("Terreno attivo da URL personalizzato.");
+    return;
+  }
+}
+
+function updateTerrainPlaceholder() {
+  const mode = ui.terrainMode.value;
+  if (mode === "ionTerrain") {
+    ui.terrainValue.placeholder = "Inserisci Asset ID terrain Cesium ion";
+    return;
+  }
+  if (mode === "terrainUrl") {
+    ui.terrainValue.placeholder =
+      "Inserisci URL terrain (es. quantized-mesh endpoint TINItaly/NASA)";
+    return;
+  }
+  ui.terrainValue.placeholder = "Non richiesto per questa modalita";
+}
+
 handler.setInputAction((click) => {
   if (!measurement.mode) {
     return;
@@ -602,6 +858,27 @@ ui.clearButton.addEventListener("click", async () => {
     tileset.destroy();
   }
   loadedTilesets.length = 0;
+
+  for (const model of loadedModels) {
+    viewer.scene.primitives.remove(model);
+    model.destroy();
+  }
+  loadedModels.length = 0;
+
+  removeGoogleTerrainTileset();
+});
+
+ui.applyTerrainButton.addEventListener("click", async () => {
+  try {
+    setStatus("Applicazione modello terreno...");
+    await applyTerrainModel();
+  } catch (error) {
+    setStatus(`Errore terreno: ${error.message}`, true);
+  }
+});
+
+ui.terrainMode.addEventListener("change", () => {
+  updateTerrainPlaceholder();
 });
 
 ui.loadUrlButton.addEventListener("click", async () => {
@@ -624,6 +901,29 @@ ui.loadFilesButton.addEventListener("click", async () => {
   const files = [...ui.localFiles.files];
   if (files.length === 0) {
     setStatus("Seleziona almeno un file.", true);
+    return;
+  }
+
+  const selectedType = ui.sourceType.value;
+  const objFiles = files.filter((file) => file.name.toLowerCase().endsWith(".obj"));
+  const shouldProcessObj =
+    selectedType === "obj" || (selectedType === "auto" && objFiles.length > 0);
+
+  if (shouldProcessObj) {
+    if (objFiles.length === 0) {
+      setStatus("Nessun file .obj trovato nella selezione.", true);
+      return;
+    }
+
+    for (const objFile of objFiles) {
+      try {
+        setStatus(`Caricamento OBJ ${objFile.name}...`);
+        await loadObjModelFromFiles(objFile, files);
+        setStatus(`OBJ caricato: ${objFile.name}`);
+      } catch (error) {
+        setStatus(`Errore su ${objFile.name}: ${error.message}`, true);
+      }
+    }
     return;
   }
 
@@ -717,7 +1017,8 @@ ui.loadIonAssetIdButton.addEventListener("click", async () => {
 ui.loadGoogleTilesButton.addEventListener("click", async () => {
   try {
     setStatus("Caricamento Google 3D Tiles in corso...");
-    await loadGooglePhotorealisticTiles();
+    ui.terrainMode.value = "google";
+    await applyTerrainModel();
     setStatus("Google 3D Tiles caricato.");
   } catch (error) {
     setStatus(
@@ -735,5 +1036,6 @@ if (savedIonToken) {
 }
 
 refreshIonAssetSelect();
+updateTerrainPlaceholder();
 
 setStatus("Viewer pronto. Scegli uno strumento o carica dati.");
