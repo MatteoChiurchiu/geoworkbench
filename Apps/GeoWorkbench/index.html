@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no"
+    />
+    <title>Geo Workbench</title>
+    <link rel="shortcut icon" href="../CesiumViewer/favicon.ico" type="image/x-icon" />
+    <link rel="stylesheet" href="GeoWorkbench.css" media="screen" />
+  </head>
+  <body>
+    <div id="cesiumContainer" class="fullWindow"></div>
+    <button
+      id="panelCollapseButton"
+      class="panelCollapseButton"
+      type="button"
+      aria-controls="menuPanel"
+      aria-expanded="true"
+    >
+      Nascondi menu
+    </button>
+
+    <aside id="menuPanel" class="panel" aria-label="Strumenti mappa">
+      <h1>Geo Workbench</h1>
+
+      <section class="toolSection">
+        <h2>Cesium ion</h2>
+        <label class="fieldLabel" for="ionToken">Access token</label>
+        <input
+          id="ionToken"
+          type="text"
+          placeholder="Inserisci il tuo token Cesium ion"
+          autocomplete="off"
+        />
+        <div class="buttonRow ionButtons">
+          <button id="connectIonButton" type="button">Connetti</button>
+          <button id="refreshIonButton" type="button">Aggiorna lista</button>
+        </div>
+
+        <label class="fieldLabel" for="ionAssets">Asset disponibili</label>
+        <select id="ionAssets" size="7"></select>
+        <button id="loadIonAssetButton" type="button">Carica asset selezionato</button>
+      </section>
+
+      <section class="toolSection">
+        <h2>Misure</h2>
+        <div class="buttonRow">
+          <button id="distanceButton" type="button">Distanza</button>
+          <button id="areaButton" type="button">Area</button>
+        </div>
+        <div class="buttonRow">
+          <button id="finishButton" type="button">Chiudi misura</button>
+          <button id="clearButton" type="button">Pulisci</button>
+        </div>
+        <p class="hint">Click sinistro per aggiungere punti, click destro per chiudere.</p>
+      </section>
+
+      <section class="toolSection">
+        <h2>Terreno</h2>
+        <label class="fieldLabel" for="terrainMode">Modello terreno</label>
+        <select id="terrainMode">
+          <option value="ellipsoid">WGS84 Ellissoide (senza DEM)</option>
+          <option value="world">Cesium World Terrain</option>
+        </select>
+        <button id="applyTerrainButton" type="button">Applica terreno</button>
+      </section>
+
+      <section class="toolSection">
+        <h2>Caricamento URL/API</h2>
+        <label class="fieldLabel" for="sourceUrl">URL endpoint</label>
+        <input id="sourceUrl" type="text" placeholder="https://.../dataset.geojson" />
+
+        <label class="fieldLabel" for="urlSourceType">Tipo endpoint</label>
+        <select id="urlSourceType">
+          <option value="wms">WMS</option>
+          <option value="api">API/GeoJSON</option>
+          <option value="czml">CZML</option>
+          <option value="geojson">GeoJSON diretto</option>
+          <option value="kml">KML/KMZ</option>
+          <option value="gpx">GPX</option>
+          <option value="3dtiles">3D Tiles (tileset.json)</option>
+        </select>
+
+        <label class="fieldLabel" for="wmsLayers">Layer WMS (se richiesto)</label>
+        <input id="wmsLayers" type="text" placeholder="es. ortofoto,confini" />
+
+        <button id="loadUrlButton" type="button">Carica da URL/API</button>
+      </section>
+
+      <section class="toolSection">
+        <h2>Caricamento file locali</h2>
+
+        <label class="fieldLabel" for="sourceType">Tipo file locale</label>
+        <select id="sourceType">
+          <option value="auto">Rilevamento automatico (solo locale)</option>
+          <option value="czml">CZML</option>
+          <option value="geojson">GeoJSON</option>
+          <option value="kml">KML/KMZ</option>
+          <option value="gpx">GPX</option>
+          <option value="3dtiles">3D Tiles (tileset.json)</option>
+          <option value="obj">OBJ</option>
+        </select>
+
+        <label class="fieldLabel" for="localFiles">File locale</label>
+        <input id="localFiles" type="file" multiple />
+        <p class="hint">Per OBJ seleziona anche eventuale MTL e texture nello stesso upload.</p>
+        <button id="loadFilesButton" type="button">Carica file</button>
+      </section>
+
+      <section class="toolSection">
+        <h2>Layer caricati</h2>
+        <div id="loadedLayers" class="layerList"></div>
+        <p class="hint">Attiva/disattiva la visibilita degli asset caricati.</p>
+      </section>
+
+      <section class="toolSection">
+        <h2>Stato</h2>
+        <p id="statusText" class="status">Pronto.</p>
+      </section>
+    </aside>
+
+    <script src="GeoWorkbench.js" type="module"></script>
+  </body>
+</html>
